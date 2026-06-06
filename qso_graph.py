@@ -28,7 +28,28 @@ def main():
     """)
 
     rows = cursor.fetchall()
+
+    # Get confirmed DXCC entities with their earliest confirmation date
+    # We want the first date each DXCC entity was confirmed
+    cursor.execute("""
+        SELECT dxcc, MIN(qso_date) as first_confirmed_date
+        FROM qsos
+        WHERE dxcc IS NOT NULL
+          AND dxcc != ''
+          AND (qsl_rcvd = 'Y'
+               OR lotw_qsl_rcvd = 'Y'
+               OR (app_qrzlog_qsldate IS NOT NULL AND app_qrzlog_qsldate != ''))
+        GROUP BY dxcc
+        ORDER BY first_confirmed_date
+    """)
+
+    dxcc_rows = cursor.fetchall()
     conn.close()
+
+    # Build a map of date -> number of new DXCC entities confirmed that day
+    dxcc_by_date = {}
+    for dxcc, first_date in dxcc_rows:
+        dxcc_by_date[first_date] = dxcc_by_date.get(first_date, 0) + 1
 
     if not rows:
         print("No QSOs found in database.")
@@ -38,9 +59,11 @@ def main():
     dates = []
     cumulative_confirmed = []
     cumulative_total = []
+    cumulative_dxcc = []
 
     running_confirmed = 0
     running_total = 0
+    running_dxcc = 0
 
     for row in rows:
         date_str, confirmed, unconfirmed = row
@@ -49,12 +72,15 @@ def main():
 
         running_confirmed += confirmed
         running_total += confirmed + unconfirmed
+        running_dxcc += dxcc_by_date.get(date_str, 0)
 
         cumulative_confirmed.append(running_confirmed)
         cumulative_total.append(running_total)
+        cumulative_dxcc.append(running_dxcc)
 
-    # Create the plot
+    # Create the plot with secondary y-axis for DXCC entities
     fig, ax = plt.subplots(figsize=(12, 6))
+    ax2 = ax.twinx()
 
     # Plot total QSOs
     ax.fill_between(dates, cumulative_total, alpha=0.3, color='blue', label='Total QSOs')
@@ -65,6 +91,12 @@ def main():
         ax.fill_between(dates, cumulative_confirmed, alpha=0.5, color='green', label='Confirmed QSOs')
         ax.plot(dates, cumulative_confirmed, color='green', linewidth=2)
 
+    # Plot confirmed DXCC entities on secondary axis
+    if running_dxcc > 0:
+        ax2.plot(dates, cumulative_dxcc, color='purple', linewidth=2, linestyle='--', label='Confirmed DX Entities')
+        ax2.set_ylabel('Confirmed DX Entities', fontsize=12, color='purple')
+        ax2.tick_params(axis='y', labelcolor='purple')
+
     # Formatting
     ax.set_xlabel('Date', fontsize=12)
     ax.set_ylabel('Cumulative QSOs', fontsize=12)
@@ -74,11 +106,14 @@ def main():
     ax.xaxis.set_major_locator(mdates.WeekdayLocator(interval=1))
     plt.xticks(rotation=45, ha='right')
 
-    ax.legend(loc='upper left')
+    # Combine legends from both axes
+    lines1, labels1 = ax.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
     ax.grid(True, alpha=0.3)
 
     # Add stats annotation
-    stats_text = f"Total QSOs: {running_total}\nConfirmed: {running_confirmed} ({100*running_confirmed/running_total:.1f}%)"
+    stats_text = f"Total QSOs: {running_total}\nConfirmed: {running_confirmed} ({100*running_confirmed/running_total:.1f}%)\nDX Entities: {running_dxcc}"
     ax.annotate(stats_text, xy=(0.98, 0.02), xycoords='axes fraction',
                 ha='right', va='bottom', fontsize=10,
                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
@@ -88,6 +123,7 @@ def main():
     print(f"Graph saved to qso_graph.png")
     print(f"Total QSOs: {running_total}")
     print(f"Confirmed QSOs: {running_confirmed}")
+    print(f"Confirmed DX Entities: {running_dxcc}")
 
 if __name__ == "__main__":
     main()
