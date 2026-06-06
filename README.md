@@ -2,6 +2,8 @@
 
 Tools for managing and visualizing amateur radio QSO logs with QRZ.com integration.
 
+**[Browse the logbook in Datasette Lite](https://lite.datasette.io/?url=https://payne.github.io/myQRZlogs/logbook.db)**
+
 ![QSO Log Progress](qso_graph.png)
 
 ## Files
